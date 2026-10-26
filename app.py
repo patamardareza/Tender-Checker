@@ -1,0 +1,55 @@
+import streamlit as st
+import google.generativeai as genai
+import fitz  # PyMuPDF
+
+# Konfigurasi Halaman
+st.set_page_config(page_title="Tender Checker - Modul HSSE", layout="wide")
+st.title("Tender Checker: Modul HSSE Plan")
+
+# Autentikasi API Key dari Secrets Streamlit
+API_KEY = st.secrets["GEMINI_API_KEY"]
+genai.configure(api_key=API_KEY)
+model = genai.GenerativeModel('gemini-1.5-pro')
+
+# Fungsi Ekstraksi Teks PDF
+def extract_text(pdf_files):
+    text = ""
+    for pdf_file in pdf_files:
+        doc = fitz.open(stream=pdf_file.read(), filetype="pdf")
+        for page in doc:
+            text += page.get_text()
+    return text
+
+# Antarmuka Unggah Dokumen
+col1, col2 = st.columns(2)
+with col1:
+    st.subheader("1. Dokumen Instruksi (TOR/IKPP Elnusa)")
+    tor_files = st.file_uploader("Unggah PDF TOR & Lampiran D", type=["pdf"], accept_multiple_files=True)
+with col2:
+    st.subheader("2. Dokumen HSSE Plan Vendor")
+    hsse_files = st.file_uploader("Unggah PDF HSSE Plan Vendor", type=["pdf"], accept_multiple_files=True)
+
+# Eksekusi Audit
+if st.button("Jalankan Audit HSSE") and tor_files and hsse_files:
+    with st.spinner("Mengekstrak dan menganalisis kesesuaian dokumen..."):
+        tor_text = extract_text(tor_files)
+        hsse_text = extract_text(hsse_files)
+        
+        prompt = f"""
+        Anda adalah Auditor HSSE profesional. Bandingkan Dokumen HSSE Plan Vendor dengan Dokumen Instruksi Tender (TOR).
+        Tugas Anda:
+        1. Temukan pelanggaran aturan mutlak (misal: batas usia kendaraan, rasio medis, aturan zero burning/pembakaran sampah).
+        2. Temukan kontradiksi atau indikasi dokumen hasil copy-paste dari proyek lain (misal: nama proyek atau lokasi yang salah).
+        
+        Tampilkan hasil dalam bentuk tabel Markdown dengan kolom: 
+        | Area Temuan | Syarat Tender (TOR) | Fakta di HSSE Plan | Status (Pelanggaran Fatal / Sesuai) |
+        
+        Dokumen TOR:
+        {tor_text}
+        
+        Dokumen HSSE Plan:
+        {hsse_text}
+        """
+        
+        response = model.generate_content(prompt)
+        st.markdown(response.text)
