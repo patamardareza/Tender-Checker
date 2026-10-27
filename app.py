@@ -1,23 +1,23 @@
 import streamlit as st
-import google.generativeai as genai
-import fitz  # PyMuPDF
+from google import genai
+import pymupdf
 
 # Konfigurasi Halaman
 st.set_page_config(page_title="Tender Checker - Modul HSSE", layout="wide")
 st.title("Tender Checker: Modul HSSE Plan")
 
-# Autentikasi API Key
+# Autentikasi API Key dengan SDK Baru
 try:
     API_KEY = st.secrets["GEMINI_API_KEY"]
-    genai.configure(api_key=API_KEY)
+    client = genai.Client(api_key=API_KEY)
 except Exception as e:
     st.error("Kunci API gagal diakses. Pastikan pengaturan rahasia (Secrets) di Streamlit sudah benar.")
 
-# Fungsi Ekstraksi Teks PDF
+# Fungsi Ekstraksi Teks PDF Modern
 def extract_text(pdf_files):
     text = ""
     for pdf_file in pdf_files:
-        doc = fitz.open(stream=pdf_file.read(), filetype="pdf")
+        doc = pymupdf.open(stream=pdf_file.read(), filetype="pdf")
         for page in doc:
             text += page.get_text()
     return text
@@ -54,19 +54,13 @@ if st.button("Jalankan Audit HSSE") and tor_files and hsse_files:
             {hsse_text}
             """
             
-            # Menggunakan kode versi spesifik
-            model = genai.GenerativeModel('gemini-1.5-flash-002')
-            response = model.generate_content(prompt)
+            # Pemanggilan model dengan SDK terbaru
+            response = client.models.generate_content(
+                model='gemini-1.5-flash',
+                contents=prompt,
+            )
+            
             st.markdown(response.text)
             
         except Exception as e:
-            # Pengaman Ganda: Jika mesin pertama gagal, gunakan mesin cadangan
-            if "404" in str(e) or "not found" in str(e):
-                try:
-                    fallback_model = genai.GenerativeModel('gemini-1.5-pro-002')
-                    fallback_response = fallback_model.generate_content(prompt)
-                    st.markdown(fallback_response.text)
-                except Exception as fallback_e:
-                    st.error(f"Sistem mendeteksi kendala operasional berlapis: {fallback_e}")
-            else:
-                st.error(f"Sistem mendeteksi kendala operasional: {e}")
+            st.error(f"Sistem mendeteksi kendala operasional: {e}")
