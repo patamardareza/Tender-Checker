@@ -6,14 +6,14 @@ import pymupdf
 st.set_page_config(page_title="Tender Checker - Modul HSSE", layout="wide")
 st.title("Tender Checker: Modul HSSE Plan")
 
-# Autentikasi API Key dengan SDK Baru
+# Autentikasi API Key
 try:
     API_KEY = st.secrets["GEMINI_API_KEY"]
     client = genai.Client(api_key=API_KEY)
 except Exception as e:
     st.error("Kunci API gagal diakses. Pastikan pengaturan rahasia (Secrets) di Streamlit sudah benar.")
 
-# Fungsi Ekstraksi Teks PDF Modern
+# Fungsi Ekstraksi Teks PDF
 def extract_text(pdf_files):
     text = ""
     for pdf_file in pdf_files:
@@ -54,9 +54,9 @@ if st.button("Jalankan Audit HSSE") and tor_files and hsse_files:
             {hsse_text}
             """
             
-            # Pemanggilan model dengan SDK terbaru
+            # Pemanggilan model dengan versi rilis fisik yang spesifik (002)
             response = client.models.generate_content(
-                model='gemini-1.5-flash',
+                model='gemini-1.5-flash-002',
                 contents=prompt,
             )
             
