@@ -10,7 +10,8 @@ st.title("Tender Checker: Modul HSSE Plan")
 try:
     API_KEY = st.secrets["GEMINI_API_KEY"]
     genai.configure(api_key=API_KEY)
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    # MENGGUNAKAN NAMA MODEL DENGAN TAG LATEST
+    model = genai.GenerativeModel('gemini-1.5-flash-latest')
 except Exception as e:
     st.error("Kunci API gagal diakses. Pastikan pengaturan rahasia (Secrets) di Streamlit sudah benar.")
 
