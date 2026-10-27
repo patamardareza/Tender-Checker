@@ -10,8 +10,6 @@ st.title("Tender Checker: Modul HSSE Plan")
 try:
     API_KEY = st.secrets["GEMINI_API_KEY"]
     genai.configure(api_key=API_KEY)
-    # MENGGUNAKAN NAMA MODEL DENGAN TAG LATEST
-    model = genai.GenerativeModel('gemini-1.5-flash-latest')
 except Exception as e:
     st.error("Kunci API gagal diakses. Pastikan pengaturan rahasia (Secrets) di Streamlit sudah benar.")
 
@@ -35,7 +33,7 @@ with col2:
 
 # Eksekusi Audit
 if st.button("Jalankan Audit HSSE") and tor_files and hsse_files:
-    with st.spinner("Mengekstrak dan menganalisis kesesuaian dokumen..."):
+    with st.spinner("Mengekstrak dan menganalisis kesesuaian dokumen... (Proses ini memakan waktu 1-2 menit)"):
         try:
             tor_text = extract_text(tor_files)
             hsse_text = extract_text(hsse_files)
@@ -56,7 +54,19 @@ if st.button("Jalankan Audit HSSE") and tor_files and hsse_files:
             {hsse_text}
             """
             
+            # Menggunakan kode versi spesifik
+            model = genai.GenerativeModel('gemini-1.5-flash-002')
             response = model.generate_content(prompt)
             st.markdown(response.text)
+            
         except Exception as e:
-            st.error(f"Sistem mendeteksi kendala operasional: {e}")
+            # Pengaman Ganda: Jika mesin pertama gagal, gunakan mesin cadangan
+            if "404" in str(e) or "not found" in str(e):
+                try:
+                    fallback_model = genai.GenerativeModel('gemini-1.5-pro-002')
+                    fallback_response = fallback_model.generate_content(prompt)
+                    st.markdown(fallback_response.text)
+                except Exception as fallback_e:
+                    st.error(f"Sistem mendeteksi kendala operasional berlapis: {fallback_e}")
+            else:
+                st.error(f"Sistem mendeteksi kendala operasional: {e}")
