@@ -1,17 +1,17 @@
 import streamlit as st
-from google import genai
+import requests
 import pymupdf
 
 # Konfigurasi Halaman
 st.set_page_config(page_title="Tender Checker - Modul HSSE", layout="wide")
 st.title("Tender Checker: Modul HSSE Plan")
 
-# Autentikasi API Key
+# Mengambil API Key
 try:
     API_KEY = st.secrets["GEMINI_API_KEY"]
-    client = genai.Client(api_key=API_KEY)
-except Exception as e:
+except Exception:
     st.error("Kunci API gagal diakses. Pastikan pengaturan rahasia (Secrets) di Streamlit sudah benar.")
+    API_KEY = None
 
 # Fungsi Ekstraksi Teks PDF
 def extract_text(pdf_files):
@@ -32,8 +32,8 @@ with col2:
     hsse_files = st.file_uploader("Unggah PDF HSSE Plan Vendor", type=["pdf"], accept_multiple_files=True)
 
 # Eksekusi Audit
-if st.button("Jalankan Audit HSSE") and tor_files and hsse_files:
-    with st.spinner("Mengekstrak dan menganalisis kesesuaian dokumen... (Proses ini memakan waktu 1-2 menit)"):
+if st.button("Jalankan Audit HSSE") and tor_files and hsse_files and API_KEY:
+    with st.spinner("Mengekstrak dan menganalisis kesesuaian dokumen... (Jalur API Langsung)"):
         try:
             tor_text = extract_text(tor_files)
             hsse_text = extract_text(hsse_files)
@@ -54,13 +54,22 @@ if st.button("Jalankan Audit HSSE") and tor_files and hsse_files:
             {hsse_text}
             """
             
-            # Pemanggilan model dengan versi rilis fisik yang spesifik (002)
-            response = client.models.generate_content(
-                model='gemini-1.5-flash-002',
-                contents=prompt,
-            )
+            # KOMUNIKASI LANGSUNG KE SERVER GOOGLE (Bypass SDK)
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={API_KEY}"
+            headers = {'Content-Type': 'application/json'}
+            payload = {
+                "contents": [{"parts": [{"text": prompt}]}]
+            }
             
-            st.markdown(response.text)
+            response = requests.post(url, headers=headers, json=payload)
             
+            # Membaca hasil dari server
+            if response.status_code == 200:
+                result_json = response.json()
+                jawaban_ai = result_json['candidates'][0]['content']['parts'][0]['text']
+                st.markdown(jawaban_ai)
+            else:
+                st.error(f"Koneksi Server Gagal: {response.text}")
+                
         except Exception as e:
             st.error(f"Sistem mendeteksi kendala operasional: {e}")
