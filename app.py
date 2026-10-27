@@ -1,11 +1,13 @@
 import streamlit as st
 import requests
 import base64
+import io
 import pymupdf
+from PIL import Image, ImageEnhance, ImageOps
 
 # Konfigurasi Halaman
 st.set_page_config(page_title="Tender Checker - Deep Audit Pro", layout="wide")
-st.title("Tender Checker: Deep Audit HSSE Plan (Mode Gemini Pro)")
+st.title("Tender Checker: Deep Audit HSSE Plan (Mode Gemini Pro + HD Image Enhancer)")
 
 # Mengambil API Key
 try:
@@ -27,7 +29,6 @@ def get_pro_models(api_key):
             methods = m.get("supportedGenerationMethods", [])
             name = m.get("name", "")
             if "generateContent" in methods and "gemini" in name.lower():
-                # Pisahkan model kelas PRO agar selalu di urutan teratas
                 if "pro" in name.lower() and "vision" not in name.lower():
                     pro_models.append(name)
                 else:
@@ -37,16 +38,39 @@ def get_pro_models(api_key):
         return pro_models + other_models
     return []
 
-# Fungsi Mengubah PDF Menjadi Paket Visual Native (Membaca Tabel, Gambar & Scan) + Teks Berhalaman
-def prepare_pdf_parts(pdf_files, label_kategori):
+# Fungsi Peningkatan Kualitas Gambar (Super-Resolution 3x + Sharpening + Contrast Boost)
+def render_enhanced_page_image(page):
+    # Render halaman pada resolusi tinggi (3x lipat dari ukuran normal / ~216-300 DPI)
+    mat = pymupdf.Matrix(3.0, 3.0)
+    pix = page.get_pixmap(matrix=mat, alpha=False)
+    img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+    
+    # Perbaikan kontras otomatis agar tulisan pudar menjadi tegas
+    img = ImageOps.autocontrast(img, cutoff=1)
+    
+    # Peningkatan ketajaman (Sharpness 2.5x) agar teks kecil di dalam bagan terbaca jelas
+    enhancer_sharp = ImageEnhance.Sharpness(img)
+    img = enhancer_sharp.enhance(2.5)
+    
+    # Peningkatan kontras tambahan (1.35x)
+    enhancer_contrast = ImageEnhance.Contrast(img)
+    img = enhancer_contrast.enhance(1.35)
+    
+    # Simpan ke format PNG berkualitas tinggi
+    buffer = io.BytesIO()
+    img.save(buffer, format="PNG", optimize=True)
+    return base64.b64encode(buffer.getvalue()).decode("utf-8")
+
+# Fungsi Menyiapkan Paket Dokumen (PDF Utuh + Gambar Halaman HD + Indeks Teks)
+def prepare_pdf_parts(pdf_files, label_kategori, enhance_images=False):
     parts = [{"text": f"\n\n=== AWAL DOKUMEN: {label_kategori} ==="}]
     for pdf_file in pdf_files:
         pdf_file.seek(0)
         raw_bytes = pdf_file.read()
         b64_data = base64.b64encode(raw_bytes).decode("utf-8")
         
-        # 1. Kirim file PDF secara visual (Native Multimodal) agar tabel & gambar terbaca 100%
-        parts.append({"text": f"\n[File PDF Visual: {pdf_file.name}]"})
+        # 1. Kirim file PDF secara visual (Native Multimodal)
+        parts.append({"text": f"\n[File PDF Utuh: {pdf_file.name}]"})
         parts.append({
             "inline_data": {
                 "mime_type": "application/pdf",
@@ -54,13 +78,26 @@ def prepare_pdf_parts(pdf_files, label_kategori):
             }
         })
         
-        # 2. Kirim indeks teks per halaman untuk memastikan akurasi nomor halaman
+        # 2. Ekstraksi teks per halaman & Peningkatan Kualitas Gambar (khusus halaman yang memiliki bagan/gambar)
         doc = pymupdf.open(stream=raw_bytes, filetype="pdf")
-        page_texts = f"\n[Indeks Teks Per Halaman untuk {pdf_file.name}]:\n"
         for idx, page in enumerate(doc):
-            page_texts += f"\n--- HALAMAN {idx + 1} ({pdf_file.name}) ---\n{page.get_text()}"
-        parts.append({"text": page_texts})
-        
+            page_num = idx + 1
+            page_text = page.get_text()
+            parts.append({"text": f"\n--- HALAMAN {page_num} ({pdf_file.name}) ---\n{page_text}"})
+            
+            # Jika halaman memiliki gambar/bagan (seperti Bagan Struktur Organisasi), lakukan peningkatan HD
+            if enhance_images and len(page.get_images(full=True)) > 0:
+                enhanced_b64 = render_enhanced_page_image(page)
+                parts.append({
+                    "text": f"\n[GAMBAR HD DIPERTAJAM - HALAMAN {page_num} ({pdf_file.name}): Baca seluruh teks kecil, nomor telepon (+62...), kode huruf [P]/[F], judul bagan, dan kotak CATATAN di dalam gambar ini dengan sangat teliti!]"
+                })
+                parts.append({
+                    "inline_data": {
+                        "mime_type": "image/png",
+                        "data": enhanced_b64
+                    }
+                })
+                
     parts.append({"text": f"\n=== AKHIR DOKUMEN: {label_kategori} ===\n"})
     return parts
 
@@ -70,7 +107,6 @@ available_models = []
 if API_KEY:
     available_models = get_pro_models(API_KEY)
     if available_models:
-        # Otomatis pilih model PRO generasi terbaru yang tidak diblokir untuk akun baru
         default_idx = 0
         for i, m in enumerate(available_models):
             if "pro" in m.lower() and "2.5" not in m.lower() and "1.5" not in m.lower():
@@ -102,27 +138,35 @@ with col2:
         accept_multiple_files=True
     )
 
-# Instruksi Audit Mendalam (Strict Checklist)
+# Instruksi Audit Mendalam dengan Aturan Konteks Tender & Pembacaan Gambar HD
 SYSTEM_PROMPT = """
 Anda adalah Lead Auditor HSSE Senior PT Elnusa Tbk.
 Tugas Anda adalah melakukan audit kepatuhan secara menyeluruh, halaman demi halaman, dengan membandingkan DOKUMEN HSSE PLAN VENDOR terhadap DOKUMEN INSTRUKSI TENDER (TOR/IKPP/Lampiran D).
 
-ATURAN KETAT AUDIT (ANTI-HALUSINASI):
-1. DILARANG KERAS menebak atau mengasumsikan pelanggaran yang tidak tertulis di dokumen.
-2. Setiap temuan WAJIB menyertakan kutipan teks asli dan NOMOR HALAMAN spesifik baik dari dokumen TOR/IKPP maupun dari dokumen HSSE Plan.
-3. Periksa seluruh teks di dalam GAMBAR/BAGAN (seperti gambar Struktur Organisasi, kop surat, tanda tangan) dan baca setiap baris-kolom TABEL dengan teliti.
+ATURAN LOGIKA & KONTEKS TENDER WAJIB (PENTING AGAR TIDAK SALAH ANALISA):
+1. PEMBEDAAN DURASI OPERASIONAL VS MASA BERLAKU KONTRAK:
+   - Bedakan secara tegas antara "Durasi Target Pelaksanaan Pekerjaan Operasional Lapangan" (misal: 84 hari untuk Topografi pada TOR Lampiran A) dengan "Jangka Waktu Perjanjian / Masa Berlaku Kontrak Keseluruhan" (misal: 365 hari pada TOR Lampiran C).
+   - Angka jangka waktu pekerjaan yang tertulis pada HSSE Plan (baik pada Pendahuluan B. Rencana Kegiatan di Halaman 7 maupun pada Tabel Lagging Indicator No. 1 di Halaman 10) adalah DURASI OPERASIONAL LAPANGAN.
+   - Oleh karena itu, WAJIB bandingkan angka durasi di Halaman 7 dan Halaman 10 tersebut hanya terhadap Durasi Target Operasional di TOR Lampiran A (84 hari), JANGAN dibandingkan dengan masa kontrak payung 365 hari di Lampiran C! Gabungkan temuan durasi Halaman 7 dan Halaman 10 menjadi satu poin temuan yang utuh.
+2. PEMBACAAN GAMBAR BAGAN STRUKTUR ORGANISASI (HALAMAN 13):
+   - Sistem telah melampirkan [GAMBAR HD DIPERTAJAM] untuk halaman yang memuat gambar bagan struktur organisasi.
+   - Baca dengan sangat teliti teks di dalam setiap kotak jabatan pada gambar tersebut: perhatikan adanya nomor telepon di dalam kurung `(+628...)` di samping/bawah nama personel, serta simbol huruf seperti `[P]` atau `[F]` di samping jabatan.
+   - Baca kotak legenda `CATATAN` di pojok kiri bawah gambar bagan yang menjelaskan arti kode `[P]` (misal: "[P] semua posisi key personil lapangan yang ditunjuk merupakan pegawai tetap PT TUB").
+   - DILARANG menyatakan bahwa nomor telepon atau keterangan status pegawai tetap tidak dicantumkan apabila pada gambar bagan sudah tertulis nomor `(+62...)` dan kode `[P]` beserta catatan legendanya! Laporkan hanya elemen yang benar-benar belum ada (misal: jika alamat email dipersyaratkan namun belum tertulis di bagan) atau jika terdapat kesalahan fatal penulisan nama klien pada judul bagan (misal: tertulis "PT PERTAMINA EP" padahal tender ini untuk PT Elnusa Tbk).
+3. ANTI-HALUSINASI:
+   - Setiap temuan WAJIB menyertakan kutipan teks asli dan NOMOR HALAMAN spesifik baik dari dokumen TOR/IKPP maupun dari dokumen HSSE Plan.
 
 LAKUKAN PEMERIKSAAN MENYELURUH PADA 10 AREA WAJIB BERIKUT:
-1. Identitas Perusahaan, Klien & Nama Proyek: Apakah ada salah ketik nama perusahaan (misal: Bersama vs Berjaya), salah nama klien pada bagan gambar (misal: tertulis PT Pertamina EP padahal tender PT Elnusa Tbk), atau salah nama lokasi/proyek akibat copy-paste?
-2. Ruang Lingkup Pekerjaan (Scope Creep/Copy-Paste): Jika dokumen ini adalah khusus TOPOGRAFI, apakah di dalamnya terselip pembahasan lingkup pekerjaan lain seperti Workshop Pemboran (Drilling) atau Perekaman (Recording)? (Cek khususnya Bab 4.4.1 Logistik dan tabel lainnya).
-3. Elemen 1 (Komitmen Manajemen & Program Proaktif): Bandingkan frekuensi MWT, Inspeksi Field Camp/Flying Camp, Inspeksi Aktivitas Kru, HOC/PEKA, dan Safety Meeting di Bab 1.2 & Tabel Leading Indicator dengan syarat minimum Lampiran D.1 Elnusa.
-4. Elemen 2 (Kebijakan & Sasaran Strategis HSSE): Periksa konsistensi angka Lagging Indicator (jumlah pekerja, hari kerja, jam kerja selamat, KM driven) dan target frekuensi/jumlah pada tabel Leading Indicator (MCU, Induksi, Training, Inspeksi Air Bersih, DCU, dll).
-5. Elemen 3 (Organisasi, Kompetensi & Pelatihan): Periksa gambar Struktur Organisasi (jabatan, nama personel, catatan kaki, pengesahan) serta kelengkapan posisi wajib sesuai Lampiran D.2.
+1. Identitas Perusahaan, Klien & Nama Proyek: Cek salah ketik nama perusahaan, salah nama klien pada judul gambar bagan Struktur Organisasi (misal: tertulis PT Pertamina EP), atau salah nama lokasi/proyek.
+2. Ruang Lingkup Pekerjaan (Copy-Paste Lingkup Lain): Jika dokumen ini khusus TOPOGRAFI, cek apakah di dalamnya terselip pembahasan lingkup pekerjaan lain seperti Workshop Pemboran (Drilling) atau Perekaman (Recording) (cek khususnya Bab 4.4.1 Logistik di Halaman 18-19).
+3. Elemen 1 (Komitmen Manajemen & Program Proaktif): Bandingkan frekuensi MWT, General TBM, Inspeksi Field Camp/Flying Camp, Inspeksi Aktivitas Kru, HOC/PEKA, dan Safety Meeting di Bab 1.2 & Tabel Leading Indicator dengan syarat minimum Lampiran D.1 Elnusa.
+4. Elemen 2 (Kebijakan & Sasaran Strategis HSSE): Periksa konsistensi durasi operasional (Halaman 7 & 10 terhadap target operasional 84 hari di TOR Lampiran A), jumlah pekerja, jam kerja selamat, KM driven, dan target Leading Indicator.
+5. Elemen 3 (Organisasi, Kompetensi & Pelatihan): Periksa gambar HD Struktur Organisasi (verifikasi keberadaan nomor telepon `(+62...)`, status pegawai tetap `[P]`, kelengkapan alamat email jika disyaratkan, dan kebenaran nama klien pada judul bagan).
 6. Elemen 4.1 - 4.3 (HIRADC, Kesehatan & Keselamatan): Periksa kesesuaian program MCU, DCU harian, pengelolaan B3/MSDS, dan persetujuan sumber air bersih.
-7. Elemen 4.4 (Logistik & Transportasi): Periksa batas usia maksimal kendaraan roda 4 dan roda >4 (bandingkan angka tahun di HSSE Plan dengan syarat TOR/Lampiran D), spesifikasi rollbar, pre-trip inspection, dan DDT.
-8. Elemen 4.5 - 4.7 (Lingkungan, Keamanan & Sosial): Periksa pengelolaan sampah/limbah (warna tempat sampah, limbah B3, grey/black water, aturan larangan pembakaran/zero burning, reklamasi).
-9. Elemen 4.8 (Matriks APD & Perlengkapan Kerja): Periksa tabel Matrix APD baris demi baris (warna helm, warna coverall, sepatu, shin-guard, survival kit, P3K, APAR, dll) apakah sudah sesuai dengan standar Lampiran D.3.
-10. Elemen 5, 6, 7 & 8 (Prosedur, ERP/Medevac, Pelaporan Insiden & Tinjauan Manajemen): Periksa skenario tanggap darurat, batas waktu pelaporan insiden, penomoran sub-bab yang duplikat/salah, dan kelengkapan lampiran.
+7. Elemen 4.4 (Logistik & Transportasi): Periksa batas usia maksimal kendaraan roda 4 dan roda >4 (bandingkan angka tahun di HSSE Plan Halaman 19 dengan syarat TOR Hal. 19), spesifikasi rollbar, pre-trip inspection, dan DDT.
+8. Elemen 4.5 - 4.7 (Lingkungan, Keamanan & Sosial): Periksa pengelolaan sampah/limbah (warna tempat sampah, limbah B3, grey/black water, reklamasi).
+9. Elemen 4.8 (Matriks APD & Perlengkapan Kerja): Periksa tabel Matrix APD baris demi baris terhadap standar Lampiran D.3.
+10. Elemen 5, 6, 7 & 8 (Prosedur, ERP/Medevac, Pelaporan Insiden & Tinjauan Manajemen): Periksa kelengkapan 8 skenario tanggap darurat wajib (Lampiran D.1 Elemen 5.4), batas waktu pelaporan insiden, dan salah ketik (typo).
 
 FORMAT OUTPUT WAJIB:
 Bagian A: Ringkasan Eksekutif & Skor Kepatuhan
@@ -132,13 +176,13 @@ Bagian C: Daftar Elemen yang Sudah Sesuai (Compliant)
 """
 
 # Eksekusi Audit
-if st.button("Jalankan Deep Audit (Gemini Pro)") and tor_files and hsse_files and selected_model:
-    with st.spinner(f"Melakukan pemindaian visual & teks halaman demi halaman dengan {selected_model}... (Memakan waktu 1-3 menit)"):
+if st.button("Jalankan Deep Audit (Gemini Pro + HD Vision)") and tor_files and hsse_files and selected_model:
+    with st.spinner(f"Mempertajam gambar bagan (HD 3x Zoom) & melakukan audit mendalam dengan {selected_model}..."):
         try:
-            # Merakit paket dokumen visual + teks
+            # Merakit paket dokumen (aktifkan enhance_images=True khusus untuk HSSE Plan Vendor)
             contents_parts = [{"text": SYSTEM_PROMPT}]
-            contents_parts.extend(prepare_pdf_parts(tor_files, "INSTRUKSI TENDER ELNUSA (TOR/IKPP)"))
-            contents_parts.extend(prepare_pdf_parts(hsse_files, "HSSE PLAN VENDOR"))
+            contents_parts.extend(prepare_pdf_parts(tor_files, "INSTRUKSI TENDER ELNUSA (TOR/IKPP)", enhance_images=False))
+            contents_parts.extend(prepare_pdf_parts(hsse_files, "HSSE PLAN VENDOR", enhance_images=True))
             
             headers = {'Content-Type': 'application/json'}
             payload = {
@@ -150,7 +194,6 @@ if st.button("Jalankan Deep Audit (Gemini Pro)") and tor_files and hsse_files an
                 }
             }
             
-            # Antrean model: Utamakan model yang dipilih, lalu fallback ke model Pro/Flash lain yang aktif
             models_to_try = [selected_model] + [
                 m for m in available_models 
                 if m != selected_model and "2.5" not in m and "1.5" not in m
@@ -166,7 +209,7 @@ if st.button("Jalankan Deep Audit (Gemini Pro)") and tor_files and hsse_files an
                 if response.status_code == 200:
                     result_json = response.json()
                     jawaban_ai = result_json['candidates'][0]['content']['parts'][0]['text']
-                    st.success(f"Deep Audit Selesai! Dianalisis menggunakan: {model_name} (Mode Visual PDF + Temperature 0.0)")
+                    st.success(f"Deep Audit Selesai! Dianalisis menggunakan: {model_name} (Fitur HD Image Enhancer Aktif)")
                     st.markdown(jawaban_ai)
                     berhasil = True
                     break
