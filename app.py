@@ -160,7 +160,7 @@ PRINSIP UTAMA AUDIT (WAJIB DITAATI 100%):
 
 3. GAYA BAHASA SEDERHANA & ATURAN KUTIPAN ASLI (VERBATIM):
    - Gunakan bahasa Indonesia yang **sederhana, lugas, dan sangat mudah dipahami** saat menuliskan penjelasan masalah dan rekomendasi perbaikan.
-   - NAMUN, untuk **Kutipan Isi Dokumen** (baik kutipan aturan dari IKPP/TOR/Lampiran D maupun kutipan fakta dari HSSE Plan/Lampiran Elemen), Anda **WAJIB menuliskannya di dalam tanda kutip ("...") PERSIS SESUAI ISI DOKUMEN ASLINYA (JANGAN DIUBAH, JANGAN DIPARAon-kan, DAN JANGAN DIKURANGI)**. Cantumkan juga nama file dan nomor halamannya secara spesifik.
+   - NAMUN, untuk **Kutipan Isi Dokumen** (baik kutipan aturan dari IKPP/TOR/Lampiran D maupun kutipan fakta dari HSSE Plan/Lampiran Elemen), Anda **WAJIB menuliskannya di dalam tanda kutip ("...") PERSIS SESUAI ISI DOKUMEN ASLINYA (JANGAN DIUBAH, JANGAN DIPARAFRASEKAN, DAN JANGAN DIKURANGI)**. Cantumkan juga nama file dan nomor halamannya secara spesifik.
 
 DAFTAR PEMERIKSAAN KESALAHAN MUTLAK PADA DOKUMEN HSSE PLAN UTAMA & LAMPIRAN:
 - Identitas Proyek, Nama Perusahaan & Nama Klien (Cek cover, teks isi, dan judul gambar bagan Struktur Organisasi).
@@ -191,7 +191,6 @@ FORMAT LAPORAN AUDIT WAJIB:
 *(Sebutkan dengan bahasa sederhana poin-poin di Dokumen HSSE Plan Utama yang sudah diperiksa dan terbukti BENAR / SESUAI dengan instruksi tender, sehingga tim tidak perlu mengubah bagian tersebut).*
 """
 
-
 # ==========================================
 # LAYER 1: HALAMAN LOGIN
 # ==========================================
@@ -213,7 +212,6 @@ if st.session_state.current_page == "login":
                     navigate_to("disclaimer")
                 else:
                     st.error("Username atau Password salah! Akses ditolak.")
-
 
 # ==========================================
 # LAYER 2: HALAMAN AGREEMENT & DISCLAIMER
@@ -247,7 +245,6 @@ elif st.session_state.current_page == "disclaimer":
             if st.button("Keluar (Logout)"):
                 logout()
 
-
 # ==========================================
 # LAYER 3: HALAMAN PILIHAN MODUL (MENU UTAMA)
 # ==========================================
@@ -277,7 +274,6 @@ elif st.session_state.current_page == "menu":
     if st.button("🔒 Keluar (Logout)"):
         logout()
 
-
 # ==========================================
 # LAYER 4A: OPSI 1 (UNDER CONSTRUCTION)
 # ==========================================
@@ -293,7 +289,6 @@ elif st.session_state.current_page == "admin_konstruksi":
     
     if st.button("⬅️ Kembali ke Menu Pilihan"):
         navigate_to("menu")
-
 
 # ==========================================
 # LAYER 4B: OPSI 2 (HALAMAN UTAMA HSSE PLAN CHECKER)
